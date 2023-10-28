@@ -9,6 +9,7 @@ import (
 	stdCtx "context"
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 	"net/http"
 	"net/url"
@@ -1542,8 +1543,8 @@ func ViewIssue(ctx *context.Context) {
 		ok                   bool
 		marked               = make(map[int64]issues_model.RoleDescriptor)
 		comment              *issues_model.Comment
-		participants         = make([]*user_model.User, 1, 10)
-		latestCloseCommentID int64
+		participants               = make([]*user_model.User, 1, 10)
+		latestCloseCommentID int64 = math.MaxInt64
 	)
 	if ctx.Repo.Repository.IsTimetrackerEnabled(ctx) {
 		if ctx.IsSigned {

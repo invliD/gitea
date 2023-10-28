@@ -6,6 +6,7 @@ package migrations
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -485,6 +486,22 @@ func (g *GiteaLocalUploader) CreateComments(comments ...*base.Comment) error {
 			if comment.Meta["NewTitle"] != nil {
 				cm.NewTitle = fmt.Sprintf("%s", comment.Meta["NewTitle"])
 			}
+		case issues_model.CommentTypePullRequestPush:
+			data := issues_model.PushActionContent{IsForcePush: false}
+			if comment.Meta["CommitIDs"] != nil {
+				if commitIDs, ok := comment.Meta["CommitIDs"].([]string); ok {
+					data.CommitIDs = commitIDs
+				}
+			}
+			if data.CommitIDs == nil {
+				data.CommitIDs = []string{}
+			}
+
+			dataJSON, err := json.Marshal(data)
+			if err != nil {
+				return err
+			}
+			cm.Content = string(dataJSON)
 		default:
 		}
 

@@ -11,9 +11,11 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"regexp"
 	"strings"
 	"time"
 
+	issues_model "code.gitea.io/gitea/models/issues"
 	"code.gitea.io/gitea/modules/container"
 	"code.gitea.io/gitea/modules/log"
 	base "code.gitea.io/gitea/modules/migration"
@@ -492,27 +494,11 @@ func (g *GitlabDownloader) GetComments(commentable base.Commentable) ([]*base.Co
 			// Flatten comment threads
 			if !comment.IndividualNote {
 				for _, note := range comment.Notes {
-					allComments = append(allComments, &base.Comment{
-						IssueIndex:  commentable.GetLocalIndex(),
-						Index:       int64(note.ID),
-						PosterID:    int64(note.Author.ID),
-						PosterName:  note.Author.Username,
-						PosterEmail: note.Author.Email,
-						Content:     note.Body,
-						Created:     *note.CreatedAt,
-					})
+					allComments = append(allComments, convertNoteToComment(commentable.GetLocalIndex(), note))
 				}
 			} else {
 				c := comment.Notes[0]
-				allComments = append(allComments, &base.Comment{
-					IssueIndex:  commentable.GetLocalIndex(),
-					Index:       int64(c.ID),
-					PosterID:    int64(c.Author.ID),
-					PosterName:  c.Author.Username,
-					PosterEmail: c.Author.Email,
-					Content:     c.Body,
-					Created:     *c.CreatedAt,
-				})
+				allComments = append(allComments, convertNoteToComment(commentable.GetLocalIndex(), c))
 			}
 		}
 		if resp.NextPage == 0 {
@@ -521,6 +507,54 @@ func (g *GitlabDownloader) GetComments(commentable base.Commentable) ([]*base.Co
 		page = resp.NextPage
 	}
 	return allComments, true, nil
+}
+
+var addedCommitsRegex = regexp.MustCompile("^added \\d+ commit")
+
+// This intentionally does not match commit ranges (abc123...def789), since those refer to commits from branches merged into the PR branch
+var addedCommitRegex = regexp.MustCompile("<li>([a-f0-9]+) - (.*?)</li>")
+
+func convertNoteToComment(localIndex int64, note *gitlab.Note) *base.Comment {
+	commentType := ""
+	content := note.Body
+	meta := map[string]any{}
+
+	if note.System {
+		if addedCommitsRegex.MatchString(note.Body) {
+			commitIDs := []string{}
+			matches := addedCommitRegex.FindAllStringSubmatch(note.Body, -1)
+			if matches != nil {
+				for _, match := range matches {
+					if strings.Contains(match[2], "<code>") {
+						// When commits from the base branch are pushed, the branch name is wrapped in code tags.
+						// We don't want those commits as they are not part of the PR.
+						continue
+					}
+					commitIDs = append(commitIDs, match[1])
+				}
+			}
+			if len(commitIDs) > 0 {
+				commentType = issues_model.CommentTypePullRequestPush.String()
+				content = ""
+				meta["CommitIDs"] = commitIDs
+			}
+		}
+	}
+	if localIndex == 36 {
+		fmt.Printf("%+v\n\n", note)
+	}
+
+	return &base.Comment{
+		IssueIndex:  localIndex,
+		Index:       int64(note.ID),
+		PosterID:    int64(note.Author.ID),
+		PosterName:  note.Author.Username,
+		PosterEmail: note.Author.Email,
+		CommentType: commentType,
+		Content:     content,
+		Created:     *note.CreatedAt,
+		Meta:        meta,
+	}
 }
 
 // GetPullRequests returns pull requests according page and perPage
