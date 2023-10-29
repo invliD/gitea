@@ -8,7 +8,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -472,6 +474,16 @@ func (g *GiteaLocalUploader) CreateComments(comments ...*base.Comment) error {
 		}
 
 		switch cm.Type {
+		case issues_model.CommentTypeCommitRef:
+			if comment.Meta["CommitSHA"] != nil {
+				cm.CommitSHA = fmt.Sprintf("%s", comment.Meta["CommitSHA"])
+				commit, err := g.gitRepo.GetCommit(cm.CommitSHA)
+				if err != nil && !git.IsErrNotExist(err) {
+					return err
+				} else if commit != nil {
+					cm.Content = fmt.Sprintf(`<a href="%s/commit/%s">%s</a>`, html.EscapeString(g.repo.Link()), html.EscapeString(url.PathEscape(cm.CommitSHA)), html.EscapeString(commit.Summary()))
+				}
+			}
 		case issues_model.CommentTypeAssignees:
 			if assigneeID, ok := comment.Meta["AssigneeID"].(int); ok {
 				cm.AssigneeID = int64(assigneeID)
@@ -486,15 +498,26 @@ func (g *GiteaLocalUploader) CreateComments(comments ...*base.Comment) error {
 			if comment.Meta["NewTitle"] != nil {
 				cm.NewTitle = fmt.Sprintf("%s", comment.Meta["NewTitle"])
 			}
+		case issues_model.CommentTypeChangeTargetBranch:
+			if comment.Meta["OldRef"] != nil {
+				cm.OldRef = fmt.Sprintf("%s", comment.Meta["OldRef"])
+			}
+			if comment.Meta["NewRef"] != nil {
+				cm.NewRef = fmt.Sprintf("%s", comment.Meta["NewRef"])
+			}
+			cm.Content = ""
 		case issues_model.CommentTypePullRequestPush:
 			data := issues_model.PushActionContent{IsForcePush: false}
-			if comment.Meta["CommitIDs"] != nil {
-				if commitIDs, ok := comment.Meta["CommitIDs"].([]string); ok {
-					data.CommitIDs = commitIDs
+			if commitIDs, ok := comment.Meta["CommitIDs"].([]string); ok {
+				data.CommitIDs = make([]string, 0, len(commitIDs))
+				for _, commitID := range commitIDs {
+					commitSHA, err := g.gitRepo.ConvertToSHA1(commitID)
+					if err != nil {
+						log.Warn("Failed to resolve commit %s, skipping. Error: %+v", commitID, err)
+						continue
+					}
+					data.CommitIDs = append(data.CommitIDs, commitSHA.String())
 				}
-			}
-			if data.CommitIDs == nil {
-				data.CommitIDs = []string{}
 			}
 
 			dataJSON, err := json.Marshal(data)
@@ -502,6 +525,8 @@ func (g *GiteaLocalUploader) CreateComments(comments ...*base.Comment) error {
 				return err
 			}
 			cm.Content = string(dataJSON)
+		case issues_model.CommentTypePRScheduledToAutoMerge, issues_model.CommentTypePRUnScheduledToAutoMerge:
+			cm.Content = ""
 		default:
 		}
 

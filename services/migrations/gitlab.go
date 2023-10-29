@@ -491,14 +491,14 @@ func (g *GitlabDownloader) GetComments(commentable base.Commentable) ([]*base.Co
 			return nil, false, fmt.Errorf("error while listing comments: %v %w", g.repoID, err)
 		}
 		for _, comment := range comments {
-			// Flatten comment threads
-			if !comment.IndividualNote {
-				for _, note := range comment.Notes {
-					allComments = append(allComments, convertNoteToComment(commentable.GetLocalIndex(), note))
+			if commentable.GetLocalIndex() == 12 {
+				fmt.Printf("%+v\n\n", comment)
+			}
+			for _, note := range comment.Notes {
+				comments := convertNoteToComments(commentable.GetLocalIndex(), note)
+				for _, convertedComment := range comments {
+					allComments = append(allComments, convertedComment)
 				}
-			} else {
-				c := comment.Notes[0]
-				allComments = append(allComments, convertNoteToComment(commentable.GetLocalIndex(), c))
 			}
 		}
 		if resp.NextPage == 0 {
@@ -509,18 +509,54 @@ func (g *GitlabDownloader) GetComments(commentable base.Commentable) ([]*base.Co
 	return allComments, true, nil
 }
 
+var commitMentionRegex = regexp.MustCompile("^mentioned in commit ([a-f0-9]+)$")
+var assigneeChangedRegex = regexp.MustCompile("^(un)?assigned(?: to)? @(\\S+)(?: and unassigned @(\\S+))?$")
+var targetBranchChangeRegex = regexp.MustCompile("^changed target branch from `(.*?)` to `(.*?)`$")
+var enableAutoMergeRegex = regexp.MustCompile("^enabled an automatic merge")
 var addedCommitsRegex = regexp.MustCompile("^added \\d+ commit")
 
 // This intentionally does not match commit ranges (abc123...def789), since those refer to commits from branches merged into the PR branch
 var addedCommitRegex = regexp.MustCompile("<li>([a-f0-9]+) - (.*?)</li>")
 
-func convertNoteToComment(localIndex int64, note *gitlab.Note) *base.Comment {
-	commentType := ""
-	content := note.Body
-	meta := map[string]any{}
+func convertNoteToComments(localIndex int64, note *gitlab.Note) []*base.Comment {
+	comments := make([]*base.Comment, 0, 1)
 
 	if note.System {
-		if addedCommitsRegex.MatchString(note.Body) {
+		if match := commitMentionRegex.FindStringSubmatch(note.Body); match != nil {
+			comment := makeCommentFromNote(localIndex, note)
+			comment.CommentType = issues_model.CommentTypeCommitRef.String()
+			comment.Meta = map[string]any{"CommitSHA": match[1]}
+			comments = append(comments, comment)
+		} else if match := assigneeChangedRegex.FindStringSubmatch(note.Body); match != nil {
+			var assignee string
+			var unassignee string
+			if match[1] == "un" {
+				assignee = ""
+				unassignee = match[2]
+			} else {
+				assignee = match[2]
+				unassignee = match[3]
+			}
+			if unassignee != "" {
+				comment := makeCommentFromNote(localIndex, note)
+				comment.CommentType = issues_model.CommentTypeAssignees.String()
+				comment.Content = fmt.Sprintf("unassigned @%s", unassignee)
+				comment.Meta = map[string]any{"Assignee": unassignee, "RemovedAssigneeID": true}
+				comments = append(comments, comment)
+			}
+			if assignee != "" {
+				comment := makeCommentFromNote(localIndex, note)
+				comment.CommentType = issues_model.CommentTypeAssignees.String()
+				comment.Content = fmt.Sprintf("assigned to @%s", assignee)
+				comment.Meta = map[string]any{"Assignee": assignee, "RemovedAssigneeID": false}
+				comments = append(comments, comment)
+			}
+		} else if match := targetBranchChangeRegex.FindStringSubmatch(note.Body); match != nil {
+			comment := makeCommentFromNote(localIndex, note)
+			comment.CommentType = issues_model.CommentTypeChangeTargetBranch.String()
+			comment.Meta = map[string]any{"OldRef": match[1], "NewRef": match[2]}
+			comments = append(comments, comment)
+		} else if addedCommitsRegex.MatchString(note.Body) {
 			commitIDs := []string{}
 			matches := addedCommitRegex.FindAllStringSubmatch(note.Body, -1)
 			if matches != nil {
@@ -533,27 +569,37 @@ func convertNoteToComment(localIndex int64, note *gitlab.Note) *base.Comment {
 					commitIDs = append(commitIDs, match[1])
 				}
 			}
+			comment := makeCommentFromNote(localIndex, note)
 			if len(commitIDs) > 0 {
-				commentType = issues_model.CommentTypePullRequestPush.String()
-				content = ""
-				meta["CommitIDs"] = commitIDs
+				comment.CommentType = issues_model.CommentTypePullRequestPush.String()
+				comment.Meta = map[string]any{"CommitIDs": commitIDs}
 			}
+			comments = append(comments, comment)
+		} else if enableAutoMergeRegex.MatchString(note.Body) {
+			comment := makeCommentFromNote(localIndex, note)
+			comment.CommentType = issues_model.CommentTypePRScheduledToAutoMerge.String()
+			comments = append(comments, comment)
+		} else if note.Body == "canceled the automatic merge" {
+			comment := makeCommentFromNote(localIndex, note)
+			comment.CommentType = issues_model.CommentTypePRUnScheduledToAutoMerge.String()
+			comments = append(comments, comment)
+		} else if note.Body == "resolved all threads" {
+			// Do not return this comment
 		}
 	}
-	if localIndex == 36 {
-		fmt.Printf("%+v\n\n", note)
-	}
 
+	return comments
+}
+
+func makeCommentFromNote(localIndex int64, note *gitlab.Note) *base.Comment {
 	return &base.Comment{
 		IssueIndex:  localIndex,
 		Index:       int64(note.ID),
 		PosterID:    int64(note.Author.ID),
 		PosterName:  note.Author.Username,
 		PosterEmail: note.Author.Email,
-		CommentType: commentType,
-		Content:     content,
+		Content:     note.Body,
 		Created:     *note.CreatedAt,
-		Meta:        meta,
 	}
 }
 
