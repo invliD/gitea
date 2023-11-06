@@ -470,7 +470,6 @@ func (g *GitlabDownloader) GetComments(commentable base.Commentable) ([]*base.Co
 	allComments := make([]*base.Comment, 0, g.maxPerPage)
 
 	page := 1
-
 	for {
 		var comments []*gitlab.Discussion
 		var resp *gitlab.Response
@@ -491,9 +490,6 @@ func (g *GitlabDownloader) GetComments(commentable base.Commentable) ([]*base.Co
 			return nil, false, fmt.Errorf("error while listing comments: %v %w", g.repoID, err)
 		}
 		for _, comment := range comments {
-			if commentable.GetLocalIndex() == 12 {
-				fmt.Printf("%+v\n\n", comment)
-			}
 			for _, note := range comment.Notes {
 				comments := convertNoteToComments(commentable.GetLocalIndex(), note)
 				for _, convertedComment := range comments {
@@ -506,17 +502,74 @@ func (g *GitlabDownloader) GetComments(commentable base.Commentable) ([]*base.Co
 		}
 		page = resp.NextPage
 	}
+
+	page = 1
+	for {
+		var stateEvents []*gitlab.StateEvent
+		var resp *gitlab.Response
+		var err error
+		if !context.IsMergeRequest {
+			stateEvents, resp, err = g.client.ResourceStateEvents.ListIssueStateEvents(g.repoID, int(commentable.GetForeignIndex()), &gitlab.ListStateEventsOptions{
+				ListOptions: gitlab.ListOptions{
+					Page:    page,
+					PerPage: g.maxPerPage,
+				},
+			}, nil, gitlab.WithContext(g.ctx))
+		} else {
+			stateEvents, resp, err = g.client.ResourceStateEvents.ListMergeStateEvents(g.repoID, int(commentable.GetForeignIndex()), &gitlab.ListStateEventsOptions{
+				ListOptions: gitlab.ListOptions{
+					Page:    page,
+					PerPage: g.maxPerPage,
+				},
+			}, nil, gitlab.WithContext(g.ctx))
+		}
+		if err != nil {
+			return nil, false, fmt.Errorf("error while listing state events: %v %w", g.repoID, err)
+		}
+
+		for _, stateEvent := range stateEvents {
+			comment := &base.Comment{
+				IssueIndex: commentable.GetLocalIndex(),
+				Index:      int64(stateEvent.ID),
+				PosterID:   int64(stateEvent.User.ID),
+				PosterName: stateEvent.User.Username,
+				Content:    string(stateEvent.State),
+				Created:    *stateEvent.CreatedAt,
+			}
+			switch stateEvent.State {
+			case gitlab.ClosedEventType:
+				comment.CommentType = issues_model.CommentTypeClose.String()
+			case gitlab.MergedEventType:
+				comment.CommentType = issues_model.CommentTypeMergePull.String()
+			case gitlab.ReopenedEventType:
+				comment.CommentType = issues_model.CommentTypeReopen.String()
+			default:
+				// Ignore other event types
+				continue
+			}
+			allComments = append(allComments, comment)
+		}
+
+		if resp.NextPage == 0 {
+			break
+		}
+		page = resp.NextPage
+	}
+
 	return allComments, true, nil
 }
 
 var commitMentionRegex = regexp.MustCompile("^mentioned in commit ([a-f0-9]+)$")
 var assigneeChangedRegex = regexp.MustCompile("^(un)?assigned(?: to)? @(\\S+)(?: and unassigned @(\\S+))?$")
+var changedTitleRegex = regexp.MustCompile("^changed title from \\*\\*(.*)\\*\\* to \\*\\*(.*)\\*\\*$")
 var targetBranchChangeRegex = regexp.MustCompile("^changed target branch from `(.*?)` to `(.*?)`$")
 var enableAutoMergeRegex = regexp.MustCompile("^enabled an automatic merge")
 var addedCommitsRegex = regexp.MustCompile("^added \\d+ commit")
 
 // This intentionally does not match commit ranges (abc123...def789), since those refer to commits from branches merged into the PR branch
 var addedCommitRegex = regexp.MustCompile("<li>([a-f0-9]+) - (.*?)</li>")
+var titleAddDiffRegex = regexp.MustCompile("\\{\\+(.*?)\\+\\}")
+var titleRemoveDiffRegex = regexp.MustCompile("\\{-(.*?)-\\}")
 
 func convertNoteToComments(localIndex int64, note *gitlab.Note) []*base.Comment {
 	comments := make([]*base.Comment, 0, 1)
@@ -528,6 +581,7 @@ func convertNoteToComments(localIndex int64, note *gitlab.Note) []*base.Comment 
 			comment.Meta = map[string]any{"CommitSHA": match[1]}
 			comments = append(comments, comment)
 		} else if match := assigneeChangedRegex.FindStringSubmatch(note.Body); match != nil {
+			// TODO: There can be multiple of each per comment
 			var assignee string
 			var unassignee string
 			if match[1] == "un" {
@@ -551,6 +605,14 @@ func convertNoteToComments(localIndex int64, note *gitlab.Note) []*base.Comment 
 				comment.Meta = map[string]any{"Assignee": assignee, "RemovedAssigneeID": false}
 				comments = append(comments, comment)
 			}
+		} else if match := changedTitleRegex.FindStringSubmatch(note.Body); match != nil {
+			comment := makeCommentFromNote(localIndex, note)
+			comment.CommentType = issues_model.CommentTypeChangeTitle.String()
+			comment.Meta = map[string]any{
+				"OldTitle": titleRemoveDiffRegex.ReplaceAllString(match[1], "$1"),
+				"NewTitle": titleAddDiffRegex.ReplaceAllString(match[2], "$1"),
+			}
+			comments = append(comments, comment)
 		} else if match := targetBranchChangeRegex.FindStringSubmatch(note.Body); match != nil {
 			comment := makeCommentFromNote(localIndex, note)
 			comment.CommentType = issues_model.CommentTypeChangeTargetBranch.String()
@@ -583,9 +645,15 @@ func convertNoteToComments(localIndex int64, note *gitlab.Note) []*base.Comment 
 			comment := makeCommentFromNote(localIndex, note)
 			comment.CommentType = issues_model.CommentTypePRUnScheduledToAutoMerge.String()
 			comments = append(comments, comment)
-		} else if note.Body == "resolved all threads" {
-			// Do not return this comment
+		} else if note.Body == "changed the description" || note.Body == "resolved all threads" {
+			// Do not return these comments
+		} else {
+			comment := makeCommentFromNote(localIndex, note)
+			comments = append(comments, comment)
 		}
+	} else {
+		comment := makeCommentFromNote(localIndex, note)
+		comments = append(comments, comment)
 	}
 
 	return comments

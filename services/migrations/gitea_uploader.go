@@ -474,6 +474,10 @@ func (g *GiteaLocalUploader) CreateComments(comments ...*base.Comment) error {
 		}
 
 		switch cm.Type {
+		case issues_model.CommentTypeReopen:
+			cm.Content = ""
+		case issues_model.CommentTypeClose:
+			cm.Content = ""
 		case issues_model.CommentTypeCommitRef:
 			if comment.Meta["CommitSHA"] != nil {
 				cm.CommitSHA = fmt.Sprintf("%s", comment.Meta["CommitSHA"])
@@ -488,8 +492,8 @@ func (g *GiteaLocalUploader) CreateComments(comments ...*base.Comment) error {
 			if assigneeID, ok := comment.Meta["AssigneeID"].(int); ok {
 				cm.AssigneeID = int64(assigneeID)
 			}
-			if comment.Meta["RemovedAssigneeID"] != nil {
-				cm.RemovedAssignee = true
+			if removed, ok := comment.Meta["RemovedAssigneeID"].(bool); ok {
+				cm.RemovedAssignee = removed
 			}
 		case issues_model.CommentTypeChangeTitle:
 			if comment.Meta["OldTitle"] != nil {
@@ -498,6 +502,7 @@ func (g *GiteaLocalUploader) CreateComments(comments ...*base.Comment) error {
 			if comment.Meta["NewTitle"] != nil {
 				cm.NewTitle = fmt.Sprintf("%s", comment.Meta["NewTitle"])
 			}
+			cm.Content = ""
 		case issues_model.CommentTypeChangeTargetBranch:
 			if comment.Meta["OldRef"] != nil {
 				cm.OldRef = fmt.Sprintf("%s", comment.Meta["OldRef"])
@@ -505,6 +510,8 @@ func (g *GiteaLocalUploader) CreateComments(comments ...*base.Comment) error {
 			if comment.Meta["NewRef"] != nil {
 				cm.NewRef = fmt.Sprintf("%s", comment.Meta["NewRef"])
 			}
+			cm.Content = ""
+		case issues_model.CommentTypeMergePull:
 			cm.Content = ""
 		case issues_model.CommentTypePullRequestPush:
 			data := issues_model.PushActionContent{IsForcePush: false}
