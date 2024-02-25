@@ -80,21 +80,9 @@
 		{{else if eq .Type 1}}
 			<div class="timeline-item event" id="{{.HashTag}}">
 				<span class="badge gt-bg-green gt-text-white">{{svg "octicon-dot-fill"}}</span>
-				{{if .OriginalAuthor}}
-				{{else}}
-					{{template "shared/user/avatarlink" dict "user" .Poster}}
-				{{end}}
+				{{template "shared/user/avatarlink" dict "user" .Poster}}
 				<span class="text grey muted-links">
-					{{if .OriginalAuthor}}
-						<span class="text black">
-							{{svg (MigrationIcon $.Repository.GetOriginalURLHostname)}}
-							{{.OriginalAuthor}}
-						</span>
-						<span class="text grey muted-links"> {{if $.Repository.OriginalURL}}</span>
-						<span class="text migrate">({{ctx.Locale.Tr "repo.migrated_from" ($.Repository.OriginalURL|Escape) ($.Repository.GetOriginalURLHostname|Escape) | Safe}}){{end}}</span>
-					{{else}}
-						{{template "shared/user/authorlink" .Poster}}
-					{{end}}
+					{{template "shared/user/authorlink" .Poster}}
 					{{if .Issue.IsPull}}
 						{{ctx.Locale.Tr "repo.pulls.reopened_at" .EventTag $createdStr | Safe}}
 					{{else}}
@@ -105,21 +93,9 @@
 		{{else if eq .Type 2}}
 			<div class="timeline-item event" id="{{.HashTag}}">
 				<span class="badge gt-bg-red gt-text-white">{{svg "octicon-circle-slash"}}</span>
-				{{if .OriginalAuthor}}
-				{{else}}
-					{{template "shared/user/avatarlink" dict "user" .Poster}}
-				{{end}}
+				{{template "shared/user/avatarlink" dict "user" .Poster}}
 				<span class="text grey muted-links">
-					{{if .OriginalAuthor}}
-						<span class="text black">
-							{{svg (MigrationIcon $.Repository.GetOriginalURLHostname)}}
-							{{.OriginalAuthor}}
-						</span>
-						<span class="text grey muted-links"> {{if $.Repository.OriginalURL}}</span>
-						<span class="text migrate">({{ctx.Locale.Tr "repo.migrated_from" ($.Repository.OriginalURL|Escape) ($.Repository.GetOriginalURLHostname|Escape) | Safe}}){{end}}</span>
-					{{else}}
-						{{template "shared/user/authorlink" .Poster}}
-					{{end}}
+					{{template "shared/user/authorlink" .Poster}}
 					{{if .Issue.IsPull}}
 						{{ctx.Locale.Tr "repo.pulls.closed_at" .EventTag $createdStr | Safe}}
 					{{else}}
@@ -130,21 +106,9 @@
 		{{else if eq .Type 28}}
 			<div class="timeline-item event" id="{{.HashTag}}">
 				<span class="badge gt-bg-purple gt-text-white">{{svg "octicon-git-merge"}}</span>
-				{{if .OriginalAuthor}}
-				{{else}}
-					{{template "shared/user/avatarlink" dict "user" .Poster}}
-				{{end}}
+				{{template "shared/user/avatarlink" dict "user" .Poster}}
 				<span class="text grey muted-links">
-					{{if .OriginalAuthor}}
-						<span class="text black">
-							{{svg (MigrationIcon $.Repository.GetOriginalURLHostname)}}
-							{{.OriginalAuthor}}
-						</span>
-						<span class="text grey muted-links"> {{if $.Repository.OriginalURL}}</span>
-						<span class="text migrate">({{ctx.Locale.Tr "repo.migrated_from" ($.Repository.OriginalURL|Escape) ($.Repository.GetOriginalURLHostname|Escape) | Safe}}){{end}}</span>
-					{{else}}
-						{{template "shared/user/authorlink" .Poster}}
-					{{end}}
+					{{template "shared/user/authorlink" .Poster}}
 					{{$link := printf "%s/commit/%s" $.Repository.Link ($.Issue.PullRequest.MergedCommitID|PathEscape)}}
 					{{if eq $.Issue.PullRequest.Status 3}}
 						{{ctx.Locale.Tr "repo.issues.comment_manually_pull_merged_at" (printf `<a class="ui sha" href="%[1]s"><b>%[2]s</b></a>` ($link|Escape) (ShortSha $.Issue.PullRequest.MergedCommitID)) (printf "<b>%[1]s</b>" ($.BaseTarget|Escape)) $createdStr | Safe}}

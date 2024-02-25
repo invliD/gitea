@@ -474,10 +474,6 @@ func (g *GiteaLocalUploader) CreateComments(comments ...*base.Comment) error {
 		}
 
 		switch cm.Type {
-		case issues_model.CommentTypeReopen:
-			cm.Content = ""
-		case issues_model.CommentTypeClose:
-			cm.Content = ""
 		case issues_model.CommentTypeCommitRef:
 			if comment.Meta["CommitSHA"] != nil {
 				cm.CommitSHA = fmt.Sprintf("%s", comment.Meta["CommitSHA"])
@@ -510,8 +506,6 @@ func (g *GiteaLocalUploader) CreateComments(comments ...*base.Comment) error {
 			if comment.Meta["NewRef"] != nil {
 				cm.NewRef = fmt.Sprintf("%s", comment.Meta["NewRef"])
 			}
-			cm.Content = ""
-		case issues_model.CommentTypeMergePull:
 			cm.Content = ""
 		case issues_model.CommentTypePullRequestPush:
 			data := issues_model.PushActionContent{IsForcePush: false}
