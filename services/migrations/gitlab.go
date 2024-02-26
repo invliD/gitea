@@ -508,7 +508,6 @@ func (g *GitlabDownloader) GetComments(commentable base.Commentable) ([]*base.Co
 var commitMentionRegex = regexp.MustCompile("^mentioned in commit ([a-f0-9]+)$")
 var assigneeChangedRegex = regexp.MustCompile("^(un)?assigned(?: to)? @(\\S+)(?: and unassigned @(\\S+))?$")
 var changedTitleRegex = regexp.MustCompile("^changed title from \\*\\*(.*)\\*\\* to \\*\\*(.*)\\*\\*$")
-var targetBranchChangeRegex = regexp.MustCompile("^changed target branch from `(.*?)` to `(.*?)`$")
 var enableAutoMergeRegex = regexp.MustCompile("^enabled an automatic merge")
 var addedCommitsRegex = regexp.MustCompile("^added \\d+ commit")
 
@@ -558,11 +557,6 @@ func convertNoteToComments(localIndex int64, note *gitlab.Note) []*base.Comment 
 				"OldTitle": titleRemoveDiffRegex.ReplaceAllString(match[1], "$1"),
 				"NewTitle": titleAddDiffRegex.ReplaceAllString(match[2], "$1"),
 			}
-			comments = append(comments, comment)
-		} else if match := targetBranchChangeRegex.FindStringSubmatch(note.Body); match != nil {
-			comment := makeCommentFromNote(localIndex, note)
-			comment.CommentType = issues_model.CommentTypeChangeTargetBranch.String()
-			comment.Meta = map[string]any{"OldRef": match[1], "NewRef": match[2]}
 			comments = append(comments, comment)
 		} else if addedCommitsRegex.MatchString(note.Body) {
 			commitIDs := []string{}

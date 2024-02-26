@@ -499,14 +499,6 @@ func (g *GiteaLocalUploader) CreateComments(comments ...*base.Comment) error {
 				cm.NewTitle = fmt.Sprintf("%s", comment.Meta["NewTitle"])
 			}
 			cm.Content = ""
-		case issues_model.CommentTypeChangeTargetBranch:
-			if comment.Meta["OldRef"] != nil {
-				cm.OldRef = fmt.Sprintf("%s", comment.Meta["OldRef"])
-			}
-			if comment.Meta["NewRef"] != nil {
-				cm.NewRef = fmt.Sprintf("%s", comment.Meta["NewRef"])
-			}
-			cm.Content = ""
 		case issues_model.CommentTypePullRequestPush:
 			data := issues_model.PushActionContent{IsForcePush: false}
 			if commitIDs, ok := comment.Meta["CommitIDs"].([]string); ok {
