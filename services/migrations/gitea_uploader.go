@@ -518,8 +518,6 @@ func (g *GiteaLocalUploader) CreateComments(comments ...*base.Comment) error {
 				return err
 			}
 			cm.Content = string(dataJSON)
-		case issues_model.CommentTypePRScheduledToAutoMerge, issues_model.CommentTypePRUnScheduledToAutoMerge:
-			cm.Content = ""
 		default:
 		}
 

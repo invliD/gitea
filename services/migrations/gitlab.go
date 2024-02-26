@@ -470,6 +470,7 @@ func (g *GitlabDownloader) GetComments(commentable base.Commentable) ([]*base.Co
 	allComments := make([]*base.Comment, 0, g.maxPerPage)
 
 	page := 1
+
 	for {
 		var comments []*gitlab.Discussion
 		var resp *gitlab.Response
@@ -508,7 +509,6 @@ func (g *GitlabDownloader) GetComments(commentable base.Commentable) ([]*base.Co
 var commitMentionRegex = regexp.MustCompile("^mentioned in commit ([a-f0-9]+)$")
 var assigneeChangedRegex = regexp.MustCompile("^(un)?assigned(?: to)? @(\\S+)(?: and unassigned @(\\S+))?$")
 var changedTitleRegex = regexp.MustCompile("^changed title from \\*\\*(.*)\\*\\* to \\*\\*(.*)\\*\\*$")
-var enableAutoMergeRegex = regexp.MustCompile("^enabled an automatic merge")
 var addedCommitsRegex = regexp.MustCompile("^added \\d+ commit")
 
 // This intentionally does not match commit ranges (abc123...def789), since those refer to commits from branches merged into the PR branch
@@ -576,14 +576,6 @@ func convertNoteToComments(localIndex int64, note *gitlab.Note) []*base.Comment 
 				comment.CommentType = issues_model.CommentTypePullRequestPush.String()
 				comment.Meta = map[string]any{"CommitIDs": commitIDs}
 			}
-			comments = append(comments, comment)
-		} else if enableAutoMergeRegex.MatchString(note.Body) {
-			comment := makeCommentFromNote(localIndex, note)
-			comment.CommentType = issues_model.CommentTypePRScheduledToAutoMerge.String()
-			comments = append(comments, comment)
-		} else if note.Body == "canceled the automatic merge" {
-			comment := makeCommentFromNote(localIndex, note)
-			comment.CommentType = issues_model.CommentTypePRUnScheduledToAutoMerge.String()
 			comments = append(comments, comment)
 		} else if note.Body == "changed the description" || note.Body == "resolved all threads" {
 			// Do not return these comments
